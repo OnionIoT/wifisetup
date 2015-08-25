@@ -1,0 +1,203 @@
+{
+	"results": [
+		{
+			"ssid": "yinghuaju305",
+			"bssid": "EC:26:CA:16:FE:70",
+			"mode": "Master",
+			"channel": 1,
+			"signal": -77,
+			"quality": 33,
+			"quality_max": 70,
+			"encryption": {
+				"enabled": true,
+				"wpa": [
+					1,
+					2
+				],
+				"authentication": [
+					"psk"
+				],
+				"ciphers": [
+					"ccmp"
+				]
+			}
+		},
+		{
+			"ssid": "WirelessAP",
+			"bssid": "78:D3:8D:C3:B9:D8",
+			"mode": "Master",
+			"channel": 7,
+			"signal": -46,
+			"quality": 64,
+			"quality_max": 70,
+			"encryption": {
+				"enabled": true,
+				"wpa": [
+					2
+				],
+				"authentication": [
+					"psk"
+				],
+				"ciphers": [
+					"tkip",
+					"ccmp"
+				]
+			}
+		},
+		{
+			"ssid": "Onion WiFi",
+			"bssid": "14:75:90:B4:F3:37",
+			"mode": "Master",
+			"channel": 11,
+			"signal": -43,
+			"quality": 67,
+			"quality_max": 70,
+			"encryption": {
+				"enabled": true,
+				"wpa": [
+					1,
+					2
+				],
+				"authentication": [
+					"psk"
+				],
+				"ciphers": [
+					"tkip",
+					"ccmp"
+				]
+			}
+		},
+		{
+			"ssid": "yisheng",
+			"bssid": "08:10:79:92:B3:AC",
+			"mode": "Master",
+			"channel": 6,
+			"signal": -75,
+			"quality": 35,
+			"quality_max": 70,
+			"encryption": {
+				"enabled": true,
+				"wpa": [
+					1,
+					2
+				],
+				"authentication": [
+					"psk"
+				],
+				"ciphers": [
+					"ccmp"
+				]
+			}
+		},
+		{
+			"ssid": "7-306",
+			"bssid": "D0:C7:C0:87:73:08",
+			"mode": "Master",
+			"channel": 11,
+			"signal": -83,
+			"quality": 27,
+			"quality_max": 70,
+			"encryption": {
+				"enabled": true,
+				"wpa": [
+					1,
+					2
+				],
+				"authentication": [
+					"psk"
+				],
+				"ciphers": [
+					"ccmp"
+				]
+			}
+		},
+		{
+			"ssid": "feicai2014",
+			"bssid": "C8:3A:35:3C:25:70",
+			"mode": "Master",
+			"channel": 2,
+			"signal": -88,
+			"quality": 22,
+			"quality_max": 70,
+			"encryption": {
+				"enabled": true,
+				"wpa": [
+					1
+				],
+				"authentication": [
+					"psk"
+				],
+				"ciphers": [
+					"tkip",
+					"ccmp"
+				]
+			}
+		},
+		{
+			"ssid": "dlink",
+			"bssid": "CC:B2:55:5D:E5:00",
+			"mode": "Master",
+			"channel": 11,
+			"signal": -88,
+			"quality": 22,
+			"quality_max": 70,
+			"encryption": {
+				"enabled": true,
+				"wpa": [
+					1,
+					2
+				],
+				"authentication": [
+					"psk"
+				],
+				"ciphers": [
+					"tkip",
+					"ccmp"
+				]
+			}
+		},
+		{
+			"ssid": "AIH-W401-2059a0fea1e2",
+			"bssid": "20:59:A0:FE:A1:E2",
+			"mode": "Master",
+			"channel": 1,
+			"signal": -86,
+			"quality": 24,
+			"quality_max": 70,
+			"encryption": {
+				"enabled": true,
+				"wpa": [
+					2
+				],
+				"authentication": [
+					"psk"
+				],
+				"ciphers": [
+					"ccmp"
+				]
+			}
+		},
+		{
+			"ssid": "TP-1-205",
+			"bssid": "C0:61:18:0D:41:D4",
+			"mode": "Master",
+			"channel": 6,
+			"signal": -81,
+			"quality": 29,
+			"quality_max": 70,
+			"encryption": {
+				"enabled": true,
+				"wpa": [
+					1,
+					2
+				],
+				"authentication": [
+					"psk"
+				],
+				"ciphers": [
+					"ccmp"
+				]
+			}
+		}
+	]
+}
