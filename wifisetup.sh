@@ -35,7 +35,7 @@ ScanWifi () {
 	RESP=$(ubus call iwinfo scan '{"device":"wlan0"}')
 	                              
 	# read the json response                                     
-	json_load "$RESP"                                            
+	json_load "$RESP"
 	                                                             
 	# check that array is returned  
 	json_get_type type results     
@@ -299,6 +299,9 @@ fi
 echo ""
 echo "Connecting to $ssid network..."
 
+# use UCI to set the network to client mode
+uci set wireless.@wifi-iface[0].mode="sta"
+
 # use UCI to set the ssid and encryption
 uci set wireless.@wifi-iface[0].ssid="$ssid"
 uci set wireless.@wifi-iface[0].encryption="$auth"
@@ -314,7 +317,14 @@ case "$auth" in
     ;;
     none)
 		# set no keys for open networks
+		uci set wireless.@wifi-iface[0].key=""
     ;;
+    *)
+		echo "ERROR: invalid network authentication specified"
+		echo "	See possible authentication types below"
+		echo ""
+		echo ""
+		Usage
 esac
 
 # commit the changes
