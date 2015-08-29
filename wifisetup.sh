@@ -299,8 +299,9 @@ fi
 echo ""
 echo "Connecting to $ssid network..."
 
-# use UCI to set the network to client mode
+# use UCI to set the network to client mode and wwan
 uci set wireless.@wifi-iface[0].mode="sta"
+uci set wireless.@wifi-iface[0].network="wwan"
 
 # use UCI to set the ssid and encryption
 uci set wireless.@wifi-iface[0].ssid="$ssid"
