@@ -2,10 +2,15 @@
 
 . /usr/share/libubox/jshn.sh
 
+bSetupWifi=1
+bKillAp=0
+bUsage=0
+bScanFailed=0
+
 ssid=""
 password=""
 auth=""
-bScanFailed=0
+authDefault="psk2"
 
 intfCount=0
 intfAp=-1
@@ -15,20 +20,24 @@ intfSta=-1
 # function to print script usage
 Usage () {
 	echo "Functionality:"
-	echo "\tSetup WiFi on the Omega"
+	echo "	Setup WiFi on the Omega"
 	echo ""
 	echo "Usage:"
 	echo "$0"
 	echo "	Accepts user input"
-	echo "$0 <ssid> <password>"
-	echo "	Uses command line arguments, default auth is wpa2"
-	echo "$0 <ssid> <password> <authentication type>"
-	echo "	Uses command line arguments"
+	echo ""
+	echo "$0 -ssid <ssid> -password <password>"
+	echo "	Specify ssid and password, default auth is wpa2"
+	echo "$0 -ssid <ssid> -password <password> -auth <authentication type>"
+	echo "	Specify ssid, authentication type, and password"
 	echo "	Possible authentication types"
 	echo "		psk2"
 	echo "		psk"
 	echo "		wep"
 	echo "		none	(note: password argument will be discarded)"
+	echo ""
+	echo "$0 -killap"
+	echo "	Disables any existing AP networks"
 	echo ""
 }
 
@@ -364,6 +373,40 @@ UciSetupWifi () {
 	fi
 }
 
+# function to disable any AP networks
+UciDeleteAp () {
+	local commit=1
+
+	if [ $intfAp -ge 0 ]; then
+		# ensure that iface exists
+		local iface=$(uci -q get wireless.\@wifi-iface[$intfAp])
+		if [ "$iface" != "wifi-iface" ]; then
+			echo "No AP network on intf $intfAp"
+			commit=0
+		fi
+
+		# ensure that iface is in AP mode
+		local mode=$(uci -q get wireless.\@wifi-iface[$intfAp].mode)
+		if [ "$mode" != "ap" ]; then
+			echo "Network intf $intfAp is not set to AP mode"
+			commit=0
+		fi
+
+		# delete the network iface
+		if [ $commit == 1 ]; then
+			echo "Disabling AP network on intf $intfAp"
+
+			uci delete wireless.@wifi-iface[$intfAp]
+			uci commit wireless
+
+			# reset the wifi adapter
+			wifi
+		fi
+	else
+		echo "No AP networks to disable!"
+	fi
+}
+
 
 
 
@@ -378,50 +421,77 @@ then
 	ReadUserInput
 else
 	## accept info from arguments
+	while [ "$1" != "" ]
+	do
+		case "$1" in
+	    	-h|-help|--help|help)
+				bUsage=1
+				shift
+		    ;;
+	    	-killap)
+				bKillAp=1
+				bSetupWifi=0
+				shift
+		    ;;
+		    -ssid)
+				shift
+				ssid=$1
+				shift
+			;;
+		    -password)
+				shift
+				password=$1
+				shift
+		    ;;
+		    -auth)
+				shift
+				auth=$1
+				shift
+		    ;;
+		    *)
+				echo "ERROR: Invalid Argument"
+				echo ""
+				bUsage=1
+		    ;;
+		esac
+	done
+fi
 
-	# print script usage
-	if 	[ $1 == "help" ] ||
-		[ $1 == "-help" ] ||
-		[ $1 == "--help" ] ||
-		[ $1 == "-h" ];
-	then
-		Usage
-		exit
-	fi
 
-	## read the arguments
-	if [ $# -ge 2 ]
-	then
-		## cli arguments define the network info
-		ssid=$1
-		password=$2
-
-		# read the authentication type (or set the default)
-		if [ $# -eq 3 ]
-		then
-			auth=$3
-		else
-			auth="psk2"
-		fi
-	fi
+# print the usage
+if [ $bUsage == 1 ]; then
+	Usage
+	exit
 fi
 
 
 # check the variables
-if 	[ $bScanFailed == 1 ]
-then
-	echo "ERROR: no networks detected... try again in a little while"
-	exit
-fi
-if 	[ "$ssid" == "" ]
-then 
-	echo "ERROR: network ssid not specified"
-	exit
-fi
-if 	[ "$auth" == "" ]
-then
-	echo "ERROR: network authentication type not specified"
-	exit
+if [ $bSetupWifi == 1 ]; then
+	# check for scan success
+	if 	[ $bScanFailed == 1 ]
+	then
+		echo "ERROR: no networks detected... try again in a little while"
+		exit
+	fi
+
+	# setup default auth if ssid and password are defined
+	if 	[ "$ssid" != "" ] &&
+		[ "$password" != "" ];
+	then
+		auth="$authDefault"
+	fi
+
+	# check that user has input enough data
+	if 	[ "$ssid" == "" ]
+	then 
+		echo "ERROR: network ssid not specified"
+		exit
+	fi
+	if 	[ "$auth" == "" ]
+	then
+		echo "ERROR: network authentication type not specified"
+		exit
+	fi
 fi
 
 
@@ -454,7 +524,15 @@ fi
 
 
 ## setup the wifi
-UciSetupWifi
+if [ $bSetupWifi == 1 ]; then
+	UciSetupWifi
+fi
+
+## kill the existing AP network 
+if [ $bKillAp == 1 ]; then
+	UciDeleteAp
+fi
+
 
 echo "Done!"
 
