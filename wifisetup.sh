@@ -4,8 +4,10 @@
 
 bSetupWifi=1
 bKillAp=0
+bConnectionCheck=0
 bUsage=0
 bScanFailed=0
+bJsonOutput=0
 
 ssid=""
 password=""
@@ -19,6 +21,10 @@ intfSta=-1
 tmpPath="/tmp"
 pingUrl="http://cloud.onion.io/api/util/ping"
 timeout=500
+
+retSetup="false"
+retKillAp="false"
+retConnectChk="false"
 
 
 # function to print script usage
@@ -42,6 +48,13 @@ Usage () {
 	echo ""
 	echo "$0 -killap"
 	echo "	Disables any existing AP networks"
+	echo ""
+	echo "$0 -connectioncheck"
+	echo "$0 -check"
+	echo "	Check if connected to the internet"
+	echo ""
+	echo "Options:"
+	echo "	-ubus		Output only json"
 	echo ""
 }
 
@@ -327,8 +340,10 @@ CheckCurrentUciWifi () {
 UciSetupWifi () {
 	local commit=1
 
-	echo ""
-	echo "> Connecting to $ssid network using intf $intfSta..."
+	if [ $bJsonOutput == 0 ]; then
+		echo ""
+		echo "> Connecting to $ssid network using intf $intfSta..."
+	fi
 
 	# setup new intf if required
 	local iface=$(uci -q get wireless.\@wifi-iface[$intfSta])
@@ -360,11 +375,13 @@ UciSetupWifi () {
 			uci set wireless.@wifi-iface[$intfSta].key=""
 	    ;;
 	    *)
-			echo "ERROR: invalid network authentication specified"
-			echo "	See possible authentication types below"
-			echo ""
-			echo ""
-			Usage
+			if [ $bJsonOutput == 0 ]; then
+				echo "ERROR: invalid network authentication specified"
+				echo "	See possible authentication types below"
+				echo ""
+				echo ""
+				Usage
+			fi
 			commit=0
 	esac
 
@@ -374,6 +391,12 @@ UciSetupWifi () {
 
 		# reset the wifi adapter
 		wifi
+
+		# set the setup return value to true
+		retSetup="true"
+	else
+		# set the setup return value to false
+		retSetup="false"
 	fi
 }
 
@@ -385,29 +408,46 @@ UciDeleteAp () {
 		# ensure that iface exists
 		local iface=$(uci -q get wireless.\@wifi-iface[$intfAp])
 		if [ "$iface" != "wifi-iface" ]; then
-			echo "> No AP network on intf $intfAp"
+			if [ $bJsonOutput == 0 ]; then
+				echo "> No AP network on intf $intfAp"
+			fi
 			commit=0
 		fi
 
 		# ensure that iface is in AP mode
 		local mode=$(uci -q get wireless.\@wifi-iface[$intfAp].mode)
 		if [ "$mode" != "ap" ]; then
-			echo "> Network intf $intfAp is not set to AP mode"
+			if [ $bJsonOutput == 0 ]; then
+				echo "> Network intf $intfAp is not set to AP mode"
+			fi
 			commit=0
 		fi
 
 		# delete the network iface
 		if [ $commit == 1 ]; then
-			echo "> Disabling AP network on intf $intfAp ..."
+			if [ $bJsonOutput == 0 ]; then
+				echo "> Disabling AP network on intf $intfAp ..."
+			fi
 
 			uci delete wireless.@wifi-iface[$intfAp]
 			uci commit wireless
 
 			# reset the wifi adapter
 			wifi
+
+			# set the kill AP return value
+			retKillAp="true"
+		else 
+			# set the kill AP return value
+			retKillAp="false"
 		fi
 	else
-		echo "> No AP networks to disable!"
+		if [ $bJsonOutput == 0 ]; then
+			echo "> No AP networks to disable!"
+		fi
+
+		# set the kill AP return value
+		retKillAp="false"
 	fi
 }
 
@@ -426,8 +466,9 @@ CheckInternetConnection () {
 	local wgetCmd="wget -t $timeout -q -O $fileName \"$pingUrl\""
 
 	# check the ping file exists
-	sleep 10
-	echo "> Checking internet connection..."
+	if [ $bJsonOutput == 0 ]; then
+		echo "> Checking internet connection..."
+	fi
 
 	local count=0
 	local bLoop=1
@@ -445,7 +486,12 @@ CheckInternetConnection () {
 		count=`expr $count + 1`
 		if [ $count -gt $timeout ]; then
 			bLoop=0
-			echo "> ERROR: request timeout, internet connection not successful"
+			if [ $bJsonOutput == 0 ]; then
+				echo "> ERROR: request timeout, internet connection not successful"
+			fi
+
+			# set the connect check return value
+			retConnectChk="false"
 			exit
 		fi
 	done
@@ -463,9 +509,19 @@ CheckInternetConnection () {
 	# check the json file contents
 	json_get_var response success
 	if [ "$response" == "OK" ]; then
-		echo "> Internet connection successful!!"
+		if [ $bJsonOutput == 0 ]; then
+			echo "> Internet connection successful!!"
+		fi
+
+		# set the connect check return value
+		retConnectChk="true"
 	else
-		echo "> ERROR: internet connection not successful"
+		if [ $bJsonOutput == 0 ]; then
+			echo "> ERROR: internet connection not successful"
+		fi
+
+		# set the connect check return value
+		retConnectChk="false"
 	fi
 }
 
@@ -487,12 +543,21 @@ else
 	    	-h|-help|--help|help)
 				bUsage=1
 				shift
-		    ;;
-	    	-killap)
+			;;
+	    	-killap|-k)
 				bKillAp=1
 				bSetupWifi=0
 				shift
-		    ;;
+			;;
+			-connectioncheck|-check|-c)
+				bConnectionCheck=1
+				bSetupWifi=0
+				shift
+			;;
+			-ubus|-u)
+				bJsonOutput=1
+				shift
+			;;
 		    -ssid)
 				shift
 				ssid=$1
@@ -502,17 +567,17 @@ else
 				shift
 				password=$1
 				shift
-		    ;;
+			;;
 		    -auth)
 				shift
 				auth=$1
 				shift
-		    ;;
+			;;
 		    *)
 				echo "ERROR: Invalid Argument"
 				echo ""
 				bUsage=1
-		    ;;
+			;;
 		esac
 	done
 fi
@@ -569,14 +634,22 @@ if [ $intfSta -ge 0 ]; then
 	# STA exists, overwrite it
 	intfSta=$intfSta
 
-	echo ""
-	echo "Found existing wifi on intf $intfSta, overwriting"
+	if 	[ $bSetupWifi == 1 ] &&
+		[ $bJsonOutput == 0 ]; 
+	then
+		echo ""
+		echo "Found existing wifi on intf $intfSta, overwriting"
+	fi
 elif [ $intfAp -ge 0 ]; then
 	# AP exists, setup STA on next free intf id
 	intfSta=$intfCount
 
-	echo ""
-	echo "Found Omega AP Wifi on intf id $intfAp"
+	if 	[ $bSetupWifi == 1 ] &&
+		[ $bJsonOutput == 0 ]; 
+	then
+		echo ""
+		echo "Found Omega AP Wifi on intf id $intfAp"
+	fi
 else
 	# no AP or STA, setup STA on next free intf id
 	intfSta=$intfCount
@@ -584,21 +657,56 @@ fi
 
 
 ## setup the wifi
-if [ $bSetupWifi == 1 ]; then
-	# setup wifi
+if 	[ $bSetupWifi == 1 ]; then
 	UciSetupWifi
 
-	# check internet connection
+	# give the iface time to connect
+	sleep 10
+fi
+
+## check the connection
+if 	[ $bSetupWifi == 1 ] ||
+	[ $bConnectionCheck == 1 ]; 
+then
 	CheckInternetConnection
 fi
 
 ## kill the existing AP network 
-if [ $bKillAp == 1 ]; then
+if 	[ $bKillAp == 1 ]; then
 	UciDeleteAp
 fi
 
 
-echo "> Done!"
+## print json output
+if [ $bJsonOutput == 1 ]; then
+	json_init
+
+	# add the wifi setup result
+	if [ $bSetupWifi == 1 ]; then
+		json_add_string "setup" "$retSetup"
+	fi
+
+	# add the connection check result
+	if 	[ $bSetupWifi == 1 ] ||
+		[ $bConnectionCheck == 1 ];
+	then
+		json_add_string "connection" "$retConnectChk"
+	fi
+
+	# add the disable AP result
+	if [ $bKillAp == 1 ]; then
+		json_add_string "disable_ap" "$retKillAp"
+	fi
+
+	# print the json
+	json_dump
+fi
+
+
+## done
+if [ $bJsonOutput == 0 ]; then
+	echo "> Done!"
+fi
 
 
 
