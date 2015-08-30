@@ -1,0 +1,31 @@
+{
+        "radio0": {
+                "up": true,
+                "pending": false,
+                "autostart": true,
+                "disabled": false,
+                "config": {
+                        "hwmode": "11g",
+                        "path": "platform\/ar933x_wmac",
+                        "htmode": "HT20",
+                        "channel": "9",
+                        "txpower": 30,
+                        "country": "US",
+                        "disabled": false
+                },
+                "interfaces": [
+                        {
+                                "section": "@wifi-iface[0]",
+                                "ifname": "wlan0",
+                                "config": {
+                                        "mode": "ap",
+                                        "encryption": "none",
+                                        "ssid": "OnionOmega_020D11",
+                                        "network": [
+                                                "wlan"
+                                        ]
+                                }
+                        }
+                ]
+        }
+}

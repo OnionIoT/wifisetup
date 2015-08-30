@@ -1,12 +1,15 @@
 #!/bin/sh
 
-. /usr/share/libubox/jshn.sh  
-
+. /usr/share/libubox/jshn.sh
 
 ssid=""
 password=""
 auth=""
 bScanFailed=0
+
+intfCount=0
+intfAp=-1
+intfSta=-1
 
 
 # function to print script usage
@@ -31,54 +34,54 @@ Usage () {
 
 # function to scan wifi networks
 ScanWifi () {
-	# run the scan command and get the response           
-	RESP=$(ubus call iwinfo scan '{"device":"wlan0"}')
-	                              
-	# read the json response                                     
+	# run the scan command and get the response
+	local RESP=$(ubus call iwinfo scan '{"device":"wlan0"}')
+	
+	# read the json response
 	json_load "$RESP"
-	                                                             
+	
 	# check that array is returned  
-	json_get_type type results     
+	json_get_type type results
 
-	# find all possible keys   
-	json_select results        
-	json_get_keys keys    
-	                                
-	                                   
+	# find all possible keys
+	json_select results
+	json_get_keys keys
+	
+	
 	if 	[ "$type" == "array" ] &&
 		[ "$keys" != "" ];
-	then                               
+	then
 		echo ""
-		echo "Select Wifi network:"       
-		                                 
-		# loop through the keys           
-		for key in $keys                  
-		do                                
+		echo "Select Wifi network:"
+		
+		# loop through the keys
+		for key in $keys
+		do
 			# select the array element
-			json_select $key          
-			                         
-			# find the ssid           
+			json_select $key
+			
+			# find the ssid
 			json_get_var cur_ssid ssid
 			if [ "$cur_ssid" == "" ]
 			then
 				cur_ssid="[hidden]"
 			fi
-			echo "$key) $cur_ssid"    
-			                     
-			# return to array top
-			json_select ..       
-		done	   
+			echo "$key) $cur_ssid"
 
-		# read the input   
+			# return to array top
+			json_select ..
+		done
+
+		# read the input
 		echo ""
-		echo -n "Selection: "               
-		read input;                   
-		                            
-		# get the selected ssid      
-		json_select $input     
-		json_get_var ssid ssid 
-		                      
-		echo "Network: $ssid"  
+		echo -n "Selection: "
+		read input;
+		
+		# get the selected ssid
+		json_select $input
+		json_get_var ssid ssid
+		
+		echo "Network: $ssid"
 
 		# detect the encryption type 
 		ReadNetworkAuthJson
@@ -87,7 +90,7 @@ ScanWifi () {
 	else
 		# scan returned no results
 		bScanFailed=1
-	fi                         
+	fi
 }
 
 # function to read network encryption from 
@@ -99,7 +102,7 @@ ReadNetworkAuthJson () {
 	if [ "$type" == "object" ]
 	then
 		# select the encryption object
-		json_select encryption		
+		json_select encryption
 
 		# read the authentication type
 		json_select authentication
@@ -123,8 +126,8 @@ ReadNetworkAuthJson () {
 
 # function to read wpa settings from the json
 ReadNetworkAuthJsonPsk () {
-	bFoundType1=0
-	bFoundType2=0
+	local bFoundType1=0
+	local bFoundType2=0
 
 	# check the wpa object
 	json_get_type type wpa
@@ -178,7 +181,7 @@ ReadNetworkAuthUser () {
 	echo "4) none"
 	echo ""
 	echo -n "Selection: "
-	read input 
+	read input
 	
 
 	case "$input" in
@@ -239,7 +242,133 @@ ReadUserInput () {
 	fi
 }
 
+# function to check for existing wireless UCI data
+# 	populates intfAp with wifi-iface number of AP network
+# 	populates intfSta with wifi-iface number of STA network
+#	a value of -1 incicates not found
+CheckCurrentUciWifi () {
+	# default values
+	intfAp=-1
+	intfSta=-1
+	intfCount=0
 
+	# get the current wireless setup
+	local RESP=$(ubus call network.wireless status)
+	
+	# read the json response
+	json_load "$RESP"
+	
+	# check radio0 type
+	json_get_type type radio0
+	
+	if [ "$type" == "object" ]; then
+		# traverse down to radio0
+		json_select radio0
+
+		# check that interfaces is an array and get the keys
+		json_get_type type interfaces
+		json_get_keys keys interfaces
+		
+		
+		if 	[ "$type" == "array" ] &&
+			[ "$keys" != "" ];
+		then
+			# traverse down to interfaces
+			json_select interfaces
+
+			# loop through the keys
+			for key in $keys
+			do
+				# find the type and select the array element
+				json_get_type type $key
+				json_select $key
+				
+				# find out if interface is set to ap
+				json_get_type type config 
+				if [ "$type" == "object" ]; then
+					json_select config
+					json_get_var wifiMode mode
+
+					if [ "$wifiMode" == "ap" ]; then
+						intfAp=`expr $key - 1`
+					elif [ "$wifiMode" == "sta" ]; then
+						intfSta=`expr $key - 1`
+					fi
+
+					json_select ..
+				fi
+
+				# increment the interface count
+				intfCount=`expr $intfCount + 1`
+
+				# return to array top
+				json_select ..
+			done
+		
+		fi # interfaces is a non-empty array
+	fi # radio0 == object
+
+}
+
+# function to perform the wifi setup
+UciSetupWifi () {
+	local commit=1
+
+	echo ""
+	echo "Connecting to $ssid network using intf $intfSta..."
+
+	# setup new intf if required
+	local iface=$(uci -q get wireless.\@wifi-iface[$intfSta])
+	if [ "$iface" != "wifi-iface" ]; then
+		#echo "  Adding intf $intfSta"
+		uci add wireless wifi-iface > /dev/null
+		uci set wireless.@wifi-iface[$intfSta].device="radio0" 
+	fi
+
+	# use UCI to set the network to client mode and wwan
+	uci set wireless.@wifi-iface[$intfSta].mode="sta"
+	uci set wireless.@wifi-iface[$intfSta].network="wwan"
+
+	# use UCI to set the ssid and encryption
+	uci set wireless.@wifi-iface[$intfSta].ssid="$ssid"
+	uci set wireless.@wifi-iface[$intfSta].encryption="$auth"
+
+	# set the network key based on the authentication
+	case "$auth" in
+		psk|psk2)
+			uci set wireless.@wifi-iface[$intfSta].key="$password"
+	    ;;
+	    wep)
+			uci set wireless.@wifi-iface[$intfSta].key=1
+			uci set wireless.@wifi-iface[$intfSta].key1="$password"
+	    ;;
+	    none)
+			# set no keys for open networks
+			uci set wireless.@wifi-iface[$intfSta].key=""
+	    ;;
+	    *)
+			echo "ERROR: invalid network authentication specified"
+			echo "	See possible authentication types below"
+			echo ""
+			echo ""
+			Usage
+			commit=0
+	esac
+
+	# commit the changes
+	if [ $commit == 1 ]; then
+		uci commit wireless
+
+		# reset the wifi adapter
+		wifi
+	fi
+}
+
+
+
+
+
+########################
 ##### Main Program #####
 
 # read the arguments
@@ -260,9 +389,10 @@ else
 		exit
 	fi
 
-	# read the arguments
+	## read the arguments
 	if [ $# -ge 2 ]
 	then
+		## cli arguments define the network info
 		ssid=$1
 		password=$2
 
@@ -295,44 +425,36 @@ then
 fi
 
 
+## check current wireless setup
+CheckCurrentUciWifi
+
+
+## define new intf id based on existing intfAp and intfSta
+#	case 	intfAp	intfSta		new intf
+#	a  		0		-1			intfAp + 1
+#	b 		0 		1			intfSta
+#	c 		-1		-1			0
+#	d 		-1		0			intfSta
+if [ $intfSta -ge 0 ]; then
+	# STA exists, overwrite it
+	intfSta=$intfSta
+
+	echo ""
+	echo "Found existing wifi on intf $intfSta, overwriting"
+elif [ $intfAp -ge 0 ]; then
+	# AP exists, setup STA on next free intf id
+	intfSta=$intfCount
+
+	echo ""
+	echo "Found Omega AP Wifi on intf id $intfAp"
+else
+	# no AP or STA, setup STA on next free intf id
+	intfSta=$intfCount
+fi
+
+
 ## setup the wifi
-echo ""
-echo "Connecting to $ssid network..."
-
-# use UCI to set the network to client mode and wwan
-uci set wireless.@wifi-iface[0].mode="sta"
-uci set wireless.@wifi-iface[0].network="wwan"
-
-# use UCI to set the ssid and encryption
-uci set wireless.@wifi-iface[0].ssid="$ssid"
-uci set wireless.@wifi-iface[0].encryption="$auth"
-
-# set the network key based on the authentication
-case "$auth" in
-	psk|psk2)
-		uci set wireless.@wifi-iface[0].key="$password"
-    ;;
-    wep)
-		uci set wireless.@wifi-iface[0].key=1
-		uci set wireless.@wifi-iface[0].key1="$password"
-    ;;
-    none)
-		# set no keys for open networks
-		uci set wireless.@wifi-iface[0].key=""
-    ;;
-    *)
-		echo "ERROR: invalid network authentication specified"
-		echo "	See possible authentication types below"
-		echo ""
-		echo ""
-		Usage
-esac
-
-# commit the changes
-uci commit wireless
-
-# reset the wifi adapter
-wifi
+UciSetupWifi
 
 echo "Done!"
 
