@@ -16,6 +16,10 @@ intfCount=0
 intfAp=-1
 intfSta=-1
 
+tmpPath="/tmp"
+pingUrl="http://cloud.onion.io/api/util/ping"
+timeout=3000
+
 
 # function to print script usage
 Usage () {
@@ -324,7 +328,7 @@ UciSetupWifi () {
 	local commit=1
 
 	echo ""
-	echo "Connecting to $ssid network using intf $intfSta..."
+	echo "> Connecting to $ssid network using intf $intfSta..."
 
 	# setup new intf if required
 	local iface=$(uci -q get wireless.\@wifi-iface[$intfSta])
@@ -381,20 +385,20 @@ UciDeleteAp () {
 		# ensure that iface exists
 		local iface=$(uci -q get wireless.\@wifi-iface[$intfAp])
 		if [ "$iface" != "wifi-iface" ]; then
-			echo "No AP network on intf $intfAp"
+			echo "> No AP network on intf $intfAp"
 			commit=0
 		fi
 
 		# ensure that iface is in AP mode
 		local mode=$(uci -q get wireless.\@wifi-iface[$intfAp].mode)
 		if [ "$mode" != "ap" ]; then
-			echo "Network intf $intfAp is not set to AP mode"
+			echo "> Network intf $intfAp is not set to AP mode"
 			commit=0
 		fi
 
 		# delete the network iface
 		if [ $commit == 1 ]; then
-			echo "Disabling AP network on intf $intfAp"
+			echo "> Disabling AP network on intf $intfAp ..."
 
 			uci delete wireless.@wifi-iface[$intfAp]
 			uci commit wireless
@@ -403,11 +407,60 @@ UciDeleteAp () {
 			wifi
 		fi
 	else
-		echo "No AP networks to disable!"
+		echo "> No AP networks to disable!"
 	fi
 }
 
+# function to check if omega is connected to the internet
+CheckInternetConnection () {
+	local fileName="$tmpPath/ping.json"
+	if [ -f $fileName ]; then
+		# delete any local copy
+		local rmCmd="rm -rf $fileName"
+		eval $rmCmd
+	fi
 
+	# define the wget command
+	local cmd="wget -t $timeout -q -O $fileName \"$pingUrl\""
+
+	# fetch the ping file
+	sleep 10
+	echo "> Checking internet connection..."
+
+	local count=0
+	local bLoop=1
+	while 	[ ! -f $fileName ] &&
+			[ $bLoop == 1 ];
+	do
+		eval $cmd
+
+		# implement time-out
+		count=`expr $count + 1`
+		if [ $count -gt $timeout ]; then
+			bLoop=0
+		fi
+	done
+
+	# check for wget time-out
+	if 	[ $bLoop == 0 ] ||
+		[ ! -f $fileName ];
+	then
+		echo "> ERROR: request timeout, internet connection not successful"
+		return
+	fi
+
+	# parse the json file
+	local RESP=$(cat $fileName)
+	json_load "$RESP"
+
+	# check the json file contents
+	json_get_var response success
+	if [ "$response" == "OK" ]; then
+		echo "> Internet connection successful!!"
+	else
+		echo "> ERROR: internet connection not successful"
+	fi
+}
 
 
 
@@ -525,7 +578,11 @@ fi
 
 ## setup the wifi
 if [ $bSetupWifi == 1 ]; then
+	# setup wifi
 	UciSetupWifi
+
+	# check internet connection
+	CheckInternetConnection
 fi
 
 ## kill the existing AP network 
@@ -534,7 +591,7 @@ if [ $bKillAp == 1 ]; then
 fi
 
 
-echo "Done!"
+echo "> Done!"
 
 
 
