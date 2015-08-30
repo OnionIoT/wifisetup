@@ -18,7 +18,7 @@ intfSta=-1
 
 tmpPath="/tmp"
 pingUrl="http://cloud.onion.io/api/util/ping"
-timeout=3000
+timeout=500
 
 
 # function to print script usage
@@ -414,40 +414,47 @@ UciDeleteAp () {
 # function to check if omega is connected to the internet
 CheckInternetConnection () {
 	local fileName="$tmpPath/ping.json"
+	local tmpFile="$tmpPath/check.txt"
 	if [ -f $fileName ]; then
 		# delete any local copy
 		local rmCmd="rm -rf $fileName"
 		eval $rmCmd
 	fi
 
-	# define the wget command
-	local cmd="wget -t $timeout -q -O $fileName \"$pingUrl\""
+	# define the wget commands
+	local wgetSpiderCmd="wget -t $timeout --spider -o $tmpFile \"$pingUrl\""
+	local wgetCmd="wget -t $timeout -q -O $fileName \"$pingUrl\""
 
-	# fetch the ping file
+	# check the ping file exists
 	sleep 10
 	echo "> Checking internet connection..."
 
 	local count=0
 	local bLoop=1
-	while 	[ ! -f $fileName ] &&
-			[ $bLoop == 1 ];
+	while 	[ $bLoop == 1 ];
 	do
-		eval $cmd
+		eval $wgetSpiderCmd
+
+		# read the response
+		local readback=$(cat $tmpFile | grep "Remote file exists.")
+		if [ "$readback" != "" ]; then
+			bLoop=0
+		fi
 
 		# implement time-out
 		count=`expr $count + 1`
 		if [ $count -gt $timeout ]; then
 			bLoop=0
+			echo "> ERROR: request timeout, internet connection not successful"
+			exit
 		fi
 	done
 
-	# check for wget time-out
-	if 	[ $bLoop == 0 ] ||
-		[ ! -f $fileName ];
-	then
-		echo "> ERROR: request timeout, internet connection not successful"
-		return
-	fi
+	# fetch the json file
+	while 	[ ! -f $fileName ]
+	do
+		eval $wgetCmd
+	done
 
 	# parse the json file
 	local RESP=$(cat $fileName)
