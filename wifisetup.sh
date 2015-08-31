@@ -492,7 +492,7 @@ CheckInternetConnection () {
 
 			# set the connect check return value
 			retConnectChk="false"
-			exit
+			return
 		fi
 	done
 
