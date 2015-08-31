@@ -4,6 +4,7 @@
 
 bSetupWifi=1
 bKillAp=0
+bKillSta=0
 bConnectionCheck=0
 bUsage=0
 bScanFailed=0
@@ -23,7 +24,7 @@ pingUrl="http://cloud.onion.io/api/util/ping"
 timeout=500
 
 retSetup="false"
-retKillAp="false"
+retDeleteIface="false"
 retConnectChk="false"
 
 
@@ -48,6 +49,9 @@ Usage () {
 	echo ""
 	echo "$0 -killap"
 	echo "	Disables any existing AP networks"
+	echo ""
+	echo "$0 -killsta"
+	echo "	Disables any existing STA networks"
 	echo ""
 	echo "$0 -connectioncheck"
 	echo "$0 -check"
@@ -266,6 +270,8 @@ ReadUserInput () {
 		echo -n "Enter password: "
 		read password
 	fi
+
+	echo ""
 }
 
 # function to check for existing wireless UCI data
@@ -341,7 +347,6 @@ UciSetupWifi () {
 	local commit=1
 
 	if [ $bJsonOutput == 0 ]; then
-		echo ""
 		echo "> Connecting to $ssid network using intf $intfSta..."
 	fi
 
@@ -400,46 +405,50 @@ UciSetupWifi () {
 	fi
 }
 
-# function to disable any AP networks
-UciDeleteAp () {
+# function to disable the specified iface
+#	$1 - iface number
+#	$2 - iface mode (ap or sta)	[optional]
+UciDeleteIface () {
 	local commit=1
 
-	if [ $intfAp -ge 0 ]; then
+	if [ $1 -ge 0 ]; then
 		# ensure that iface exists
-		local iface=$(uci -q get wireless.\@wifi-iface[$intfAp])
+		local iface=$(uci -q get wireless.\@wifi-iface[$1])
 		if [ "$iface" != "wifi-iface" ]; then
 			if [ $bJsonOutput == 0 ]; then
-				echo "> No AP network on intf $intfAp"
+				echo "> No network on intf $1"
 			fi
 			commit=0
 		fi
 
-		# ensure that iface is in AP mode
-		local mode=$(uci -q get wireless.\@wifi-iface[$intfAp].mode)
-		if [ "$mode" != "ap" ]; then
-			if [ $bJsonOutput == 0 ]; then
-				echo "> Network intf $intfAp is not set to AP mode"
+		# ensure that iface is in correct mode
+		if [ "$2" != "" ]; then
+			local mode=$(uci -q get wireless.\@wifi-iface[$1].mode)
+			if [ "$mode" != "$2" ]; then
+				if [ $bJsonOutput == 0 ]; then
+					echo "> Network intf $1 is not set to $2 mode"
+				fi
+				commit=0
 			fi
-			commit=0
 		fi
 
 		# delete the network iface
 		if [ $commit == 1 ]; then
 			if [ $bJsonOutput == 0 ]; then
-				echo "> Disabling AP network on intf $intfAp ..."
+				echo "> Disabling network on iface $1 ..."
 			fi
 
-			uci delete wireless.@wifi-iface[$intfAp]
+			uci delete wireless.@wifi-iface[$1]
 			uci commit wireless
 
 			# reset the wifi adapter
 			wifi
 
 			# set the kill AP return value
-			retKillAp="true"
+			retDeleteIface="true"
 		else 
 			# set the kill AP return value
-			retKillAp="false"
+			retDeleteIface="false"
 		fi
 	else
 		if [ $bJsonOutput == 0 ]; then
@@ -447,7 +456,7 @@ UciDeleteAp () {
 		fi
 
 		# set the kill AP return value
-		retKillAp="false"
+		retDeleteIface="false"
 	fi
 }
 
@@ -546,8 +555,13 @@ else
 				bUsage=1
 				shift
 			;;
-	    	-killap|-k)
+	    	-killap)
 				bKillAp=1
+				bSetupWifi=0
+				shift
+			;;
+			-killsta)
+				bKillSta=1
 				bSetupWifi=0
 				shift
 			;;
@@ -576,6 +590,7 @@ else
 				shift
 			;;
 		    *)
+				shift
 				echo "ERROR: Invalid Argument"
 				echo ""
 				bUsage=1
@@ -639,7 +654,6 @@ if [ $intfSta -ge 0 ]; then
 	if 	[ $bSetupWifi == 1 ] &&
 		[ $bJsonOutput == 0 ]; 
 	then
-		echo ""
 		echo "Found existing wifi on intf $intfSta, overwriting"
 	fi
 elif [ $intfAp -ge 0 ]; then
@@ -649,7 +663,6 @@ elif [ $intfAp -ge 0 ]; then
 	if 	[ $bSetupWifi == 1 ] &&
 		[ $bJsonOutput == 0 ]; 
 	then
-		echo ""
 		echo "Found Omega AP Wifi on intf id $intfAp"
 	fi
 else
@@ -680,7 +693,6 @@ if 	[ $bSetupWifi == 1 ] &&
 	[ $bConnectionCheck == 1 ]; 
 then
 	if [ $bJsonOutput == 0 ]; then
-		echo ""
 		echo "> Waiting so that iface connects..."
 	fi
 
@@ -697,7 +709,13 @@ fi
 
 ## kill the existing AP network 
 if 	[ $bKillAp == 1 ]; then
-	UciDeleteAp
+	UciDeleteIface $intfAp "ap"
+fi
+
+
+## kill the existing STA network
+if 	[ $bKillSta == 1 ]; then
+	UciDeleteIface $intfSta "sta"
 fi
 
 
@@ -715,7 +733,13 @@ if [ $bJsonOutput == 1 ]; then
 
 	# add the disable AP result
 	if [ $bKillAp == 1 ]; then
-		json_add_string "disable_ap" "$retKillAp"
+		json_add_string "disable_ap" "$retDeleteIface"
+		bPrintJson=1
+	fi
+
+	# add the disable AP result
+	if [ $bKillSta == 1 ]; then
+		json_add_string "disable_sta" "$retDeleteIface"
 		bPrintJson=1
 	fi
 
