@@ -3,12 +3,17 @@
 . /usr/share/libubox/jshn.sh
 
 bSetupWifi=1
+bDisableWwanCheck=0
 bKillAp=0
 bKillSta=0
-bConnectionCheck=0
+bCheckConnection=0
+bCheckWwan=0
 bUsage=0
-bScanFailed=0
 bJsonOutput=0
+
+bScanFailed=0
+bWwanUp=0
+
 
 ssid=""
 password=""
@@ -25,7 +30,8 @@ timeout=500
 
 retSetup="false"
 retDeleteIface="false"
-retConnectChk="false"
+retChkConnect="false"
+retChkWwan="false"
 
 
 # function to print script usage
@@ -47,14 +53,19 @@ Usage () {
 	echo "		wep"
 	echo "		none	(note: password argument will be discarded)"
 	echo ""
+	echo "Options for two above use cases:"
+	echo " -disablewwancheck 	do not check if wwan device is up after wifi setup"
+	echo ""
 	echo "$0 -killap"
 	echo "	Disables any existing AP networks"
 	echo ""
 	echo "$0 -killsta"
 	echo "	Disables any existing STA networks"
 	echo ""
-	echo "$0 -connectioncheck"
-	echo "$0 -check"
+	echo "$0 -checkwwan"
+	echo "	Check wwan status"
+	echo ""
+	echo "$0 -checkconnection"
 	echo "	Check if connected to the internet"
 	echo ""
 	echo "Options:"
@@ -460,6 +471,34 @@ UciDeleteIface () {
 	fi
 }
 
+# function to check if wwan connection is up
+#	if not, there is an issue with the network password
+CheckWwanStatus () {
+	# use ubus to read if wwan is up
+	local resp=$(ubus call network.interface.wwan status)
+	json_load "$resp"
+	json_get_var bWwanStatus up 
+
+	# set global wwan up variable
+	bWwanUp=0;
+	retChkWwan="false";
+	if [ $bWwanStatus == 1 ]; then
+		bWwanUp=1;
+		retChkWwan="true"
+	fi
+
+	# stdout
+	if [ $bJsonOutput == 0 ]; then
+		echo "> Checking wwan device status..."
+		echo -n "> wwan is "
+		if [ $bWwanStatus == 1 ]; then
+			echo "up"
+		else
+			echo "not up!!"
+		fi
+	fi
+}
+
 # function to check if omega is connected to the internet
 CheckInternetConnection () {
 	local fileName="$tmpPath/ping.json"
@@ -500,7 +539,7 @@ CheckInternetConnection () {
 			fi
 
 			# set the connect check return value
-			retConnectChk="false"
+			retChkConnect="false"
 			return
 		fi
 	done
@@ -523,14 +562,14 @@ CheckInternetConnection () {
 		fi
 
 		# set the connect check return value
-		retConnectChk="true"
+		retChkConnect="true"
 	else
 		if [ $bJsonOutput == 0 ]; then
 			echo "> ERROR: internet connection not successful"
 		fi
 
 		# set the connect check return value
-		retConnectChk="false"
+		retChkConnect="false"
 	fi
 }
 
@@ -543,7 +582,7 @@ CheckInternetConnection () {
 if [ $# == 0 ]
 then
 	## accept all info from user interactions
-	bConnectionCheck=1 	# check connection
+	bCheckConnection=1 	# check connection
 
 	ReadUserInput
 else
@@ -565,8 +604,17 @@ else
 				bSetupWifi=0
 				shift
 			;;
-			-connectioncheck|-check|-c)
-				bConnectionCheck=1
+			-disablewwancheck)
+				bDisableWwanCheck=1
+				shift
+			;;
+			-connectioncheck|-checkconnection)
+				bCheckConnection=1
+				bSetupWifi=0
+				shift
+			;;
+			-checkwwan)
+				bCheckWwan=1
 				bSetupWifi=0
 				shift
 			;;
@@ -676,7 +724,7 @@ if 	[ $bSetupWifi == 1 ]; then
 	# print json before performing the config change
 	# (only if just doing wifi setup)
 	if 	[ $bJsonOutput == 1 ] && 
-		[ $bConnectionCheck == 0 ];
+		[ $bCheckConnection == 0 ];
 	then
 		json_init
 		json_add_string "connecting" "true"
@@ -684,13 +732,24 @@ if 	[ $bSetupWifi == 1 ]; then
 	fi
 
 	UciSetupWifi
+
+	# check if wwan is up
+	if [ $bDisableWwanCheck == 0 ]; then
+		sleep 10
+		CheckWwanStatus
+
+		# remove sta if not up
+		if [ $bWwanUp == 0 ]; then
+			bKillSta=1
+		fi
+	fi
 fi
 
 
 ## give iface time to connect
 # 	if doing both setup and check
 if 	[ $bSetupWifi == 1 ] &&
-	[ $bConnectionCheck == 1 ]; 
+	[ $bCheckConnection == 1 ]; 
 then
 	if [ $bJsonOutput == 0 ]; then
 		echo "> Waiting so that iface connects..."
@@ -700,8 +759,15 @@ then
 fi
 
 
+## check the wwan status
+if 	[ $bCheckWwan == 1 ]; 
+then
+	CheckWwanStatus
+fi
+
+
 ## check the connection
-if 	[ $bConnectionCheck == 1 ]; 
+if 	[ $bCheckConnection == 1 ]; 
 then
 	CheckInternetConnection
 fi
@@ -724,10 +790,17 @@ if [ $bJsonOutput == 1 ]; then
 	local bPrintJson=0
 	json_init
 
-	# add the connection check result
-	if 	[ $bConnectionCheck == 1 ];
+	# add the wwan check result
+	if 	[ $bCheckWwan == 1 ];
 	then
-		json_add_string "connection" "$retConnectChk"
+		json_add_string "wwan" "$retChkWwan"
+		bPrintJson=1
+	fi
+
+	# add the connection check result
+	if 	[ $bCheckConnection == 1 ];
+	then
+		json_add_string "connection" "$retChkConnect"
 		bPrintJson=1
 	fi
 
