@@ -534,6 +534,8 @@ CheckInternetConnection () {
 if [ $# == 0 ]
 then
 	## accept all info from user interactions
+	bConnectionCheck=1 	# check connection
+
 	ReadUserInput
 else
 	## accept info from arguments
@@ -658,18 +660,40 @@ fi
 
 ## setup the wifi
 if 	[ $bSetupWifi == 1 ]; then
-	UciSetupWifi
+	# print json before performing the config change
+	# (only if just doing wifi setup)
+	if 	[ $bJsonOutput == 1 ] && 
+		[ $bConnectionCheck == 0 ];
+	then
+		json_init
+		json_add_string "connecting" "true"
+		json_dump
+	fi
 
-	# give the iface time to connect
+	UciSetupWifi
+fi
+
+
+## give iface time to connect
+# 	if doing both setup and check
+if 	[ $bSetupWifi == 1 ] &&
+	[ $bConnectionCheck == 1 ]; 
+then
+	if [ $bJsonOutput == 0 ]; then
+		echo ""
+		echo "> Waiting so that iface connects..."
+	fi
+
 	sleep 10
 fi
 
+
 ## check the connection
-if 	[ $bSetupWifi == 1 ] ||
-	[ $bConnectionCheck == 1 ]; 
+if 	[ $bConnectionCheck == 1 ]; 
 then
 	CheckInternetConnection
 fi
+
 
 ## kill the existing AP network 
 if 	[ $bKillAp == 1 ]; then
@@ -679,27 +703,26 @@ fi
 
 ## print json output
 if [ $bJsonOutput == 1 ]; then
+	local bPrintJson=0
 	json_init
 
-	# add the wifi setup result
-	if [ $bSetupWifi == 1 ]; then
-		json_add_string "setup" "$retSetup"
-	fi
-
 	# add the connection check result
-	if 	[ $bSetupWifi == 1 ] ||
-		[ $bConnectionCheck == 1 ];
+	if 	[ $bConnectionCheck == 1 ];
 	then
 		json_add_string "connection" "$retConnectChk"
+		bPrintJson=1
 	fi
 
 	# add the disable AP result
 	if [ $bKillAp == 1 ]; then
 		json_add_string "disable_ap" "$retKillAp"
+		bPrintJson=1
 	fi
 
 	# print the json
-	json_dump
+	if [ $bPrintJson == 1 ]; then
+		json_dump
+	fi
 fi
 
 
