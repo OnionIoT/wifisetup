@@ -3,6 +3,7 @@
 . /usr/share/libubox/jshn.sh
 
 bSetupWifi=1
+bSetupAp=0
 bDisableWwanCheck=0
 bKillAp=0
 bKillSta=0
@@ -18,7 +19,10 @@ bWwanUp=0
 ssid=""
 password=""
 auth=""
+
 authDefault="psk2"
+authDefaultAp="none"
+networkType=""
 
 intfCount=0
 intfAp=-1
@@ -58,6 +62,7 @@ Usage () {
 	echo ""
 	echo "Options for two above use cases:"
 	echo " -disablewwancheck 	do not check if wwan device is up after wifi setup"
+	echo " -accesspoint		create access-point instead of connect to network"
 	echo ""
 	echo "$0 -killap"
 	echo "	Disables any existing AP networks"
@@ -356,18 +361,36 @@ CheckCurrentUciWifi () {
 
 }
 
-# function to perform wifi setup for STA networks
-# 	$1 	- interface number
-# echo return:
-#	1 if everything went ok
-#	0 if not, and do not commit
-UciSetupWifiSta () {
+# function to perform the wifi setup
+#	$1 	- interface number
+#	$2 	- interface type "ap" or "sta"
+UciSetupWifi () {
 	local commit=1
 	local intfId=$1
+	local networkType=$2
 
-	# use UCI to set the network to client mode and wwan
-	uci set wireless.@wifi-iface[$intfId].mode="sta"
-	uci set wireless.@wifi-iface[$intfId].network="wwan"
+	if [ $bJsonOutput == 0 ]; then
+		echo "> Connecting to $ssid network using intf $intfId..."
+	fi
+
+	# setup new intf if required
+	local iface=$(uci -q get wireless.\@wifi-iface[$intfId])
+	if [ "$iface" != "wifi-iface" ]; then
+		#echo "  Adding intf $intfId"
+		uci add wireless wifi-iface > /dev/null
+		uci set wireless.@wifi-iface[$intfId].device="radio0" 
+	fi
+
+	# perform the type specific setup
+	if [ "$networkType" = "sta" ]; then
+		# use UCI to set the network to client mode and wwan
+		uci set wireless.@wifi-iface[$intfId].mode="sta"
+		uci set wireless.@wifi-iface[$intfId].network="wwan"
+	elif [ "$networkType" = "ap" ]; then
+		# use UCI to set the network to access-point mode and wlan
+		uci set wireless.@wifi-iface[$intfId].mode="ap"
+		uci set wireless.@wifi-iface[$intfId].network="wlan"
+	fi 
 
 	# use UCI to set the ssid and encryption
 	uci set wireless.@wifi-iface[$intfId].ssid="$ssid"
@@ -391,33 +414,6 @@ UciSetupWifiSta () {
 			commit=0
 	esac
 
-	echo "$commit"
-}
-
-# function to perform the wifi setup
-#	$1 	- interface number
-#	$2 	- interface type "ap" or "sta"
-UciSetupWifi () {
-	local commit=1
-	local intfId=$1
-	local networkType=$2
-
-	if [ $bJsonOutput == 0 ]; then
-		echo "> Connecting to $ssid network using intf $intfId..."
-	fi
-
-	# setup new intf if required
-	local iface=$(uci -q get wireless.\@wifi-iface[$intfId])
-	if [ "$iface" != "wifi-iface" ]; then
-		#echo "  Adding intf $intfId"
-		uci add wireless wifi-iface > /dev/null
-		uci set wireless.@wifi-iface[$intfId].device="radio0" 
-	fi
-
-	# perform the rest of the setup as required by the network type
-	if [ "$networkType" = "sta" ]; then
-		commit=$(UciSetupWifiSta $intfId)
-	fi 
 
 	# commit the changes
 	if [ $commit == 1 ]; then
@@ -665,6 +661,10 @@ else
 				auth=$1
 				shift
 			;;
+			-accesspoint)
+				bSetupAp=1
+				shift
+			;;
 		    *)
 				echo "ERROR: Invalid Argument: $1"
 				echo ""
@@ -698,6 +698,14 @@ if [ $bSetupWifi == 1 ]; then
 		[ "$auth" == "" ];
 	then
 		auth="$authDefault"
+	fi
+
+	# setup default auth for AP mode
+	if 	[ "$ssid" != "" ] &&
+		[ "$auth" == "" ] &&
+		[ $bSetupAp == 1 ];
+	then
+		auth="$authDefaultAp"
 	fi
 
 	# check that user has input enough data
@@ -775,10 +783,23 @@ if 	[ $bSetupWifi == 1 ]; then
 		json_dump
 	fi
 
-	UciSetupWifi $intfNewSta "sta"
+	# differentiate between sta and ap networks
+	if [ $bSetupAp == 0 ]; then
+		# sta
+		intfNew=$intfNewSta
+		networkType="sta"
+	elif [ $bSetupAp == 1 ]; then
+		# ap
+		intfNew=$intfNewAp
+		networkType="ap"
+	fi
+
+	UciSetupWifi $intfNew "$networkType"
 
 	# check if wwan is up
-	if [ $bDisableWwanCheck == 0 ]; then
+	if 	[ $bDisableWwanCheck == 0 ] &&
+		[ $bSetupAp == 0 ]; 
+	then
 		sleep 10
 		CheckWwanStatus
 
