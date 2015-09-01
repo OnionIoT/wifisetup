@@ -13,6 +13,7 @@ bJsonOutput=0
 
 bScanFailed=0
 bWwanUp=0
+bUpdatedNetworkConfig=0
 
 
 ssid=""
@@ -30,6 +31,7 @@ timeout=500
 
 retSetup="false"
 retDeleteIface="false"
+retSetNetworkIfname="false"
 retChkConnect="false"
 retChkWwan="false"
 
@@ -468,6 +470,50 @@ UciDeleteIface () {
 
 		# set the kill AP return value
 		retDeleteIface="false"
+	fi
+}
+
+# function to set network interface ifname
+#	$1 	- interface name 	[ wlan for ap, wlan for sta ]
+#	$2	- ifname for device	[ wlan0 or wlan0-1 ]
+UciSetNetworkIfname () {
+	# check the arguments
+	if 	[ "$1" == "" ] ||
+		[ "$2" == "" ];
+	then
+		if [ $bJsonOutput == 0 ]; then
+			echo "> ERROR:UciSetNetworkIfname:: invalid arguments"
+		fi
+
+		retSetNetworkIfname="false"
+		return
+	fi
+
+	# read the arguments
+	local interface="$1"
+	local ifname="$2"
+
+	# read the current ifname
+	local currentIfname=$(uci -q get network.$interface.ifname)
+	
+	# set the new ifname 
+	if [ "$currentIfname" != "$ifname" ]; then
+		uci set network.$interface.ifname="$ifname"
+		uci commit
+
+		retSetNetworkIfname="set network.$interface to $ifname ifname"
+		bUpdatedNetworkConfig=1
+	else
+		# interface already at desired ifname
+		retSetNetworkIfname="network.$interface already set to $ifname ifname"
+	fi
+}
+
+# function to restart network service
+#	only restart if there have been changes to the network config
+RestartNetworkService () {
+	if [ $bUpdatedNetworkConfig == 1 ]; then
+		/etc/init.d/network restart
 	fi
 }
 
