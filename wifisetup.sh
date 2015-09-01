@@ -453,8 +453,8 @@ UciDeleteIface () {
 			uci delete wireless.@wifi-iface[$1]
 			uci commit wireless
 
-			# reset the wifi adapter
-			wifi
+			# reset the network adapter
+			/etc/init.d/network restart
 
 			# set the kill AP return value
 			retDeleteIface="true"
