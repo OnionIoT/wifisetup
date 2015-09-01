@@ -354,21 +354,14 @@ CheckCurrentUciWifi () {
 
 }
 
-# function to perform the wifi setup
-UciSetupWifi () {
+# function to perform wifi setup for STA networks
+# 	$1 	- interface number
+# echo return:
+#	1 if everything went ok
+#	0 if not, and do not commit
+UciSetupWifiSta () {
 	local commit=1
-
-	if [ $bJsonOutput == 0 ]; then
-		echo "> Connecting to $ssid network using intf $intfSta..."
-	fi
-
-	# setup new intf if required
-	local iface=$(uci -q get wireless.\@wifi-iface[$intfSta])
-	if [ "$iface" != "wifi-iface" ]; then
-		#echo "  Adding intf $intfSta"
-		uci add wireless wifi-iface > /dev/null
-		uci set wireless.@wifi-iface[$intfSta].device="radio0" 
-	fi
+	local intfSta=$1
 
 	# use UCI to set the network to client mode and wwan
 	uci set wireless.@wifi-iface[$intfSta].mode="sta"
@@ -392,15 +385,37 @@ UciSetupWifi () {
 			uci set wireless.@wifi-iface[$intfSta].key=""
 	    ;;
 	    *)
-			if [ $bJsonOutput == 0 ]; then
-				echo "ERROR: invalid network authentication specified"
-				echo "	See possible authentication types below"
-				echo ""
-				echo ""
-				Usage
-			fi
+			# invalid authorization
 			commit=0
 	esac
+
+	echo "$commit"
+}
+
+# function to perform the wifi setup
+#	$1 	- interface number
+#	$2 	- interface type "ap" or "sta"
+UciSetupWifi () {
+	local commit=1
+	local intfId=$1
+	local networkType=$2
+
+	if [ $bJsonOutput == 0 ]; then
+		echo "> Connecting to $ssid network using intf $intfId..."
+	fi
+
+	# setup new intf if required
+	local iface=$(uci -q get wireless.\@wifi-iface[$intfId])
+	if [ "$iface" != "wifi-iface" ]; then
+		#echo "  Adding intf $intfSta"
+		uci add wireless wifi-iface > /dev/null
+		uci set wireless.@wifi-iface[$intfId].device="radio0" 
+	fi
+
+	# perform the rest of the setup as required by the network type
+	if [ "$networkType" = "sta" ]; then
+		commit=$(UciSetupWifiSta $intfId)
+	fi 
 
 	# commit the changes
 	if [ $commit == 1 ]; then
@@ -412,6 +427,16 @@ UciSetupWifi () {
 		# set the setup return value to true
 		retSetup="true"
 	else
+		if [ $bJsonOutput == 0 ]; then
+			if [ "$networkType" = "sta" ]; then
+				echo "ERROR: invalid network authentication specified"
+				echo "	See possible authentication types below"
+				echo ""
+				echo ""
+				Usage
+			fi
+		fi
+
 		# set the setup return value to false
 		retSetup="false"
 	fi
@@ -625,12 +650,12 @@ else
 			;;
 		    -ssid)
 				shift
-				ssid=$1
+				ssid="$1"
 				shift
 			;;
 		    -password)
 				shift
-				password=$1
+				password="$1"
 				shift
 			;;
 		    -auth)
@@ -639,10 +664,10 @@ else
 				shift
 			;;
 		    *)
-				shift
-				echo "ERROR: Invalid Argument"
+				echo "ERROR: Invalid Argument: $1"
 				echo ""
 				bUsage=1
+				shift
 			;;
 		esac
 	done
@@ -667,7 +692,8 @@ if [ $bSetupWifi == 1 ]; then
 
 	# setup default auth if ssid and password are defined
 	if 	[ "$ssid" != "" ] &&
-		[ "$password" != "" ];
+		[ "$password" != "" ] &&
+		[ "$auth" == "" ];
 	then
 		auth="$authDefault"
 	fi
@@ -732,7 +758,7 @@ if 	[ $bSetupWifi == 1 ]; then
 		json_dump
 	fi
 
-	UciSetupWifi
+	UciSetupWifi $intfSta "sta"
 
 	# check if wwan is up
 	if [ $bDisableWwanCheck == 0 ]; then
