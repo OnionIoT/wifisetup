@@ -23,6 +23,8 @@ authDefault="psk2"
 intfCount=0
 intfAp=-1
 intfSta=-1
+intfNewSta=-1
+intfNewAp=-1
 
 tmpPath="/tmp"
 pingUrl="http://cloud.onion.io/api/util/ping"
@@ -361,28 +363,28 @@ CheckCurrentUciWifi () {
 #	0 if not, and do not commit
 UciSetupWifiSta () {
 	local commit=1
-	local intfSta=$1
+	local intfId=$1
 
 	# use UCI to set the network to client mode and wwan
-	uci set wireless.@wifi-iface[$intfSta].mode="sta"
-	uci set wireless.@wifi-iface[$intfSta].network="wwan"
+	uci set wireless.@wifi-iface[$intfId].mode="sta"
+	uci set wireless.@wifi-iface[$intfId].network="wwan"
 
 	# use UCI to set the ssid and encryption
-	uci set wireless.@wifi-iface[$intfSta].ssid="$ssid"
-	uci set wireless.@wifi-iface[$intfSta].encryption="$auth"
+	uci set wireless.@wifi-iface[$intfId].ssid="$ssid"
+	uci set wireless.@wifi-iface[$intfId].encryption="$auth"
 
 	# set the network key based on the authentication
 	case "$auth" in
 		psk|psk2)
-			uci set wireless.@wifi-iface[$intfSta].key="$password"
+			uci set wireless.@wifi-iface[$intfId].key="$password"
 	    ;;
 	    wep)
-			uci set wireless.@wifi-iface[$intfSta].key=1
-			uci set wireless.@wifi-iface[$intfSta].key1="$password"
+			uci set wireless.@wifi-iface[$intfId].key=1
+			uci set wireless.@wifi-iface[$intfId].key1="$password"
 	    ;;
 	    none)
 			# set no keys for open networks
-			uci set wireless.@wifi-iface[$intfSta].key=""
+			uci set wireless.@wifi-iface[$intfId].key=""
 	    ;;
 	    *)
 			# invalid authorization
@@ -407,7 +409,7 @@ UciSetupWifi () {
 	# setup new intf if required
 	local iface=$(uci -q get wireless.\@wifi-iface[$intfId])
 	if [ "$iface" != "wifi-iface" ]; then
-		#echo "  Adding intf $intfSta"
+		#echo "  Adding intf $intfId"
 		uci add wireless wifi-iface > /dev/null
 		uci set wireless.@wifi-iface[$intfId].device="radio0" 
 	fi
@@ -481,18 +483,18 @@ UciDeleteIface () {
 			# reset the network adapter
 			/etc/init.d/network restart
 
-			# set the kill AP return value
+			# set the kill network return value
 			retDeleteIface="true"
 		else 
-			# set the kill AP return value
+			# set the kill network return value
 			retDeleteIface="false"
 		fi
 	else
 		if [ $bJsonOutput == 0 ]; then
-			echo "> No AP networks to disable!"
+			echo "> No $2 networks to disable!"
 		fi
 
-		# set the kill AP return value
+		# set the kill network return value
 		retDeleteIface="false"
 	fi
 }
@@ -717,32 +719,47 @@ CheckCurrentUciWifi
 
 
 ## define new intf id based on existing intfAp and intfSta
-#	case 	intfAp	intfSta		new intf
-#	a  		0		-1			intfAp + 1
-#	b 		0 		1			intfSta
-#	c 		-1		-1			0
-#	d 		-1		0			intfSta
-if [ $intfSta -ge 0 ]; then
+#	case 	intfAp	intfSta		new STA intf 	new AP intf
+#	a  		0		-1			intfAp + 1 		intfAp
+#	b 		0 		1			intfSta			intfAp
+#	c 		-1		-1			0				0
+#	d 		-1		0			intfSta			intfSta + 1
+if 		[ $intfAp -ge 0 ] &&
+		[ $intfSta == -1 ];
+then
+	## case a
+	# AP exists, overwrite it
+	intfNewAp=$intfAp
+
+	# STA on next free iface id
+	intfNewSta=$intfCount
+
+elif 	[ $intfAp -ge 0 ] &&
+		[ $intfSta -ge 0 ];
+then
+	## case b
+	# AP exists, overwrite it
+	intfNewAp=$intfAp
+
 	# STA exists, overwrite it
-	intfSta=$intfSta
+	intfNewSta=$intfSta
 
-	if 	[ $bSetupWifi == 1 ] &&
-		[ $bJsonOutput == 0 ]; 
-	then
-		echo "Found existing wifi on intf $intfSta, overwriting"
-	fi
-elif [ $intfAp -ge 0 ]; then
-	# AP exists, setup STA on next free intf id
-	intfSta=$intfCount
+elif 	[ $intfAp == -1 ] &&
+		[ $intfSta == -1 ];
+then
+	## case c
+	# new network on iface 0 (or next free iface)
+	intfNewAp=$intfCount
+	intfNewSta=$intfCount
 
-	if 	[ $bSetupWifi == 1 ] &&
-		[ $bJsonOutput == 0 ]; 
-	then
-		echo "Found Omega AP Wifi on intf id $intfAp"
-	fi
-else
-	# no AP or STA, setup STA on next free intf id
-	intfSta=$intfCount
+elif 	[ $intfAp == -1 ] &&
+		[ $intfSta -ge 0 ];
+then
+	# AP on next free iface id
+	intfNewAp=$intfCount
+
+	# STA exists, overwrite it
+	intfNewSta=$intfSta
 fi
 
 
@@ -758,7 +775,7 @@ if 	[ $bSetupWifi == 1 ]; then
 		json_dump
 	fi
 
-	UciSetupWifi $intfSta "sta"
+	UciSetupWifi $intfNewSta "sta"
 
 	# check if wwan is up
 	if [ $bDisableWwanCheck == 0 ]; then
@@ -768,6 +785,7 @@ if 	[ $bSetupWifi == 1 ]; then
 		# remove sta if not up
 		if [ $bWwanUp == 0 ]; then
 			bKillSta=1
+			intfSta=$intfNewSta
 		fi
 	fi
 fi
