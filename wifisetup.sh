@@ -750,7 +750,8 @@ fi
 ## give iface time to connect
 # 	if doing both setup and check
 if 	[ $bSetupWifi == 1 ] &&
-	[ $bCheckConnection == 1 ]; 
+	[ $bCheckConnection == 1 ] &&
+	[ $bDisableWwanCheck == 1 ]; 
 then
 	if [ $bJsonOutput == 0 ]; then
 		echo "> Waiting so that iface connects..."
@@ -760,17 +761,17 @@ then
 fi
 
 
-## check the wwan status
-if 	[ $bCheckWwan == 1 ]; 
-then
-	CheckWwanStatus
-fi
-
-
 ## check the connection
 if 	[ $bCheckConnection == 1 ]; 
 then
 	CheckInternetConnection
+fi
+
+
+## check the wwan status
+if 	[ $bCheckWwan == 1 ]; 
+then
+	CheckWwanStatus
 fi
 
 
