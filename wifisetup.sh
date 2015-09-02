@@ -800,7 +800,15 @@ if 	[ $bSetupWifi == 1 ]; then
 	if 	[ $bDisableWwanCheck == 0 ] &&
 		[ $bSetupAp == 0 ]; 
 	then
+		# give the interface time to connect
 		sleep 10
+
+		# add an additional wait if there was an existing STA
+		if [ $intfSta -ge 0 ]; then
+			#	wwwan needs to go down, then go back up, takes longer
+			sleep 8
+		fi
+
 		CheckWwanStatus
 
 		# remove sta if not up
