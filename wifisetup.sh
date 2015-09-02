@@ -2,6 +2,7 @@
 
 . /usr/share/libubox/jshn.sh
 
+bNoOp=0		# for being included in other scripts
 bSetupWifi=1
 bSetupAp=0
 bDisableWwanCheck=0
@@ -665,6 +666,10 @@ else
 				bSetupAp=1
 				shift
 			;;
+			-noop)
+				bNoOp=1
+				shift
+			;;
 		    *)
 				echo "ERROR: Invalid Argument: $1"
 				echo ""
@@ -683,226 +688,229 @@ if [ $bUsage == 1 ]; then
 fi
 
 
-# check the variables
-if [ $bSetupWifi == 1 ]; then
-	# check for scan success
-	if 	[ $bScanFailed == 1 ]
+# run the main program
+if [ $bNoOp == 0 ]; then
+
+	# check the variables
+	if [ $bSetupWifi == 1 ]; then
+		# check for scan success
+		if 	[ $bScanFailed == 1 ]
+		then
+			echo "ERROR: no networks detected... try again in a little while"
+			exit
+		fi
+
+		# setup default auth if ssid and password are defined
+		if 	[ "$ssid" != "" ] &&
+			[ "$password" != "" ] &&
+			[ "$auth" == "" ];
+		then
+			auth="$authDefault"
+		fi
+
+		# setup default auth for AP mode
+		if 	[ "$ssid" != "" ] &&
+			[ "$auth" == "" ] &&
+			[ $bSetupAp == 1 ];
+		then
+			auth="$authDefaultAp"
+		fi
+
+		# check that user has input enough data
+		if 	[ "$ssid" == "" ]
+		then 
+			echo "ERROR: network ssid not specified"
+			exit
+		fi
+		if 	[ "$auth" == "" ]
+		then
+			echo "ERROR: network authentication type not specified"
+			exit
+		fi
+	fi
+
+
+	## check current wireless setup
+	CheckCurrentUciWifi
+
+
+	## define new intf id based on existing intfAp and intfSta
+	#	case 	intfAp	intfSta		new STA intf 	new AP intf
+	#	a  		0		-1			intfAp + 1 		intfAp
+	#	b 		0 		1			intfSta			intfAp
+	#	c 		-1		-1			0				0
+	#	d 		-1		0			intfSta			intfSta + 1
+	if 		[ $intfAp -ge 0 ] &&
+			[ $intfSta == -1 ];
 	then
-		echo "ERROR: no networks detected... try again in a little while"
-		exit
-	fi
+		## case a
+		# AP exists, overwrite it
+		intfNewAp=$intfAp
 
-	# setup default auth if ssid and password are defined
-	if 	[ "$ssid" != "" ] &&
-		[ "$password" != "" ] &&
-		[ "$auth" == "" ];
+		# STA on next free iface id
+		intfNewSta=$intfCount
+
+	elif 	[ $intfAp -ge 0 ] &&
+			[ $intfSta -ge 0 ];
 	then
-		auth="$authDefault"
-	fi
+		## case b
+		# AP exists, overwrite it
+		intfNewAp=$intfAp
 
-	# setup default auth for AP mode
-	if 	[ "$ssid" != "" ] &&
-		[ "$auth" == "" ] &&
-		[ $bSetupAp == 1 ];
+		# STA exists, overwrite it
+		intfNewSta=$intfSta
+
+	elif 	[ $intfAp == -1 ] &&
+			[ $intfSta == -1 ];
 	then
-		auth="$authDefaultAp"
-	fi
+		## case c
+		# new network on iface 0 (or next free iface)
+		intfNewAp=$intfCount
+		intfNewSta=$intfCount
 
-	# check that user has input enough data
-	if 	[ "$ssid" == "" ]
-	then 
-		echo "ERROR: network ssid not specified"
-		exit
-	fi
-	if 	[ "$auth" == "" ]
+	elif 	[ $intfAp == -1 ] &&
+			[ $intfSta -ge 0 ];
 	then
-		echo "ERROR: network authentication type not specified"
-		exit
+		# AP on next free iface id
+		intfNewAp=$intfCount
+
+		# STA exists, overwrite it
+		intfNewSta=$intfSta
 	fi
-fi
 
 
-## check current wireless setup
-CheckCurrentUciWifi
+	## setup the wifi
+	if 	[ $bSetupWifi == 1 ]; then
+		# print json before performing the config change
+		# (only if just doing wifi setup)
+		if 	[ $bJsonOutput == 1 ] && 
+			[ $bCheckConnection == 0 ];
+		then
+			json_init
+			json_add_string "connecting" "true"
+			json_dump
+		fi
+
+		# differentiate between sta and ap networks
+		if [ $bSetupAp == 0 ]; then
+			# sta
+			intfNew=$intfNewSta
+			networkType="sta"
+		elif [ $bSetupAp == 1 ]; then
+			# ap
+			intfNew=$intfNewAp
+			networkType="ap"
+		fi
+
+		UciSetupWifi $intfNew "$networkType"
+
+		# check if wwan is up
+		if 	[ $bDisableWwanCheck == 0 ] &&
+			[ $bSetupAp == 0 ]; 
+		then
+			# give the interface time to connect
+			sleep 10
+
+			# add an additional wait if there was an existing STA
+			if [ $intfSta -ge 0 ]; then
+				#	wwwan needs to go down, then go back up, takes longer
+				sleep 8
+			fi
+
+			CheckWwanStatus
+
+			# remove sta if not up
+			if [ $bWwanUp == 0 ]; then
+				bKillSta=1
+				intfSta=$intfNewSta
+			fi
+		fi
+	fi
 
 
-## define new intf id based on existing intfAp and intfSta
-#	case 	intfAp	intfSta		new STA intf 	new AP intf
-#	a  		0		-1			intfAp + 1 		intfAp
-#	b 		0 		1			intfSta			intfAp
-#	c 		-1		-1			0				0
-#	d 		-1		0			intfSta			intfSta + 1
-if 		[ $intfAp -ge 0 ] &&
-		[ $intfSta == -1 ];
-then
-	## case a
-	# AP exists, overwrite it
-	intfNewAp=$intfAp
-
-	# STA on next free iface id
-	intfNewSta=$intfCount
-
-elif 	[ $intfAp -ge 0 ] &&
-		[ $intfSta -ge 0 ];
-then
-	## case b
-	# AP exists, overwrite it
-	intfNewAp=$intfAp
-
-	# STA exists, overwrite it
-	intfNewSta=$intfSta
-
-elif 	[ $intfAp == -1 ] &&
-		[ $intfSta == -1 ];
-then
-	## case c
-	# new network on iface 0 (or next free iface)
-	intfNewAp=$intfCount
-	intfNewSta=$intfCount
-
-elif 	[ $intfAp == -1 ] &&
-		[ $intfSta -ge 0 ];
-then
-	# AP on next free iface id
-	intfNewAp=$intfCount
-
-	# STA exists, overwrite it
-	intfNewSta=$intfSta
-fi
-
-
-## setup the wifi
-if 	[ $bSetupWifi == 1 ]; then
-	# print json before performing the config change
-	# (only if just doing wifi setup)
-	if 	[ $bJsonOutput == 1 ] && 
-		[ $bCheckConnection == 0 ];
+	## give iface time to connect
+	# 	if doing both setup and check
+	if 	[ $bSetupWifi == 1 ] &&
+		[ $bCheckConnection == 1 ] &&
+		[ $bDisableWwanCheck == 1 ]; 
 	then
-		json_init
-		json_add_string "connecting" "true"
-		json_dump
-	fi
+		if [ $bJsonOutput == 0 ]; then
+			echo "> Waiting so that iface connects..."
+		fi
 
-	# differentiate between sta and ap networks
-	if [ $bSetupAp == 0 ]; then
-		# sta
-		intfNew=$intfNewSta
-		networkType="sta"
-	elif [ $bSetupAp == 1 ]; then
-		# ap
-		intfNew=$intfNewAp
-		networkType="ap"
-	fi
-
-	UciSetupWifi $intfNew "$networkType"
-
-	# check if wwan is up
-	if 	[ $bDisableWwanCheck == 0 ] &&
-		[ $bSetupAp == 0 ]; 
-	then
-		# give the interface time to connect
 		sleep 10
+	fi
 
-		# add an additional wait if there was an existing STA
-		if [ $intfSta -ge 0 ]; then
-			#	wwwan needs to go down, then go back up, takes longer
-			sleep 8
-		fi
 
+	## check the connection
+	if 	[ $bCheckConnection == 1 ]; 
+	then
+		CheckInternetConnection
+	fi
+
+
+	## check the wwan status
+	if 	[ $bCheckWwan == 1 ]; 
+	then
 		CheckWwanStatus
+	fi
 
-		# remove sta if not up
-		if [ $bWwanUp == 0 ]; then
-			bKillSta=1
-			intfSta=$intfNewSta
+
+	## kill the existing AP network 
+	if 	[ $bKillAp == 1 ]; then
+		UciDeleteIface $intfAp "ap"
+	fi
+
+
+	## kill the existing STA network
+	if 	[ $bKillSta == 1 ]; then
+		UciDeleteIface $intfSta "sta"
+	fi
+
+
+	## print json output
+	if [ $bJsonOutput == 1 ]; then
+		local bPrintJson=0
+		json_init
+
+		# add the wwan check result
+		if 	[ $bCheckWwan == 1 ];
+		then
+			json_add_string "wwan" "$retChkWwan"
+			bPrintJson=1
+		fi
+
+		# add the connection check result
+		if 	[ $bCheckConnection == 1 ];
+		then
+			json_add_string "connection" "$retChkConnect"
+			bPrintJson=1
+		fi
+
+		# add the disable AP result
+		if [ $bKillAp == 1 ]; then
+			json_add_string "disable_ap" "$retDeleteIface"
+			bPrintJson=1
+		fi
+
+		# add the disable AP result
+		if [ $bKillSta == 1 ]; then
+			json_add_string "disable_sta" "$retDeleteIface"
+			bPrintJson=1
+		fi
+
+		# print the json
+		if [ $bPrintJson == 1 ]; then
+			json_dump
 		fi
 	fi
-fi
 
 
-## give iface time to connect
-# 	if doing both setup and check
-if 	[ $bSetupWifi == 1 ] &&
-	[ $bCheckConnection == 1 ] &&
-	[ $bDisableWwanCheck == 1 ]; 
-then
+	## done
 	if [ $bJsonOutput == 0 ]; then
-		echo "> Waiting so that iface connects..."
+		echo "> Done!"
 	fi
 
-	sleep 10
-fi
-
-
-## check the connection
-if 	[ $bCheckConnection == 1 ]; 
-then
-	CheckInternetConnection
-fi
-
-
-## check the wwan status
-if 	[ $bCheckWwan == 1 ]; 
-then
-	CheckWwanStatus
-fi
-
-
-## kill the existing AP network 
-if 	[ $bKillAp == 1 ]; then
-	UciDeleteIface $intfAp "ap"
-fi
-
-
-## kill the existing STA network
-if 	[ $bKillSta == 1 ]; then
-	UciDeleteIface $intfSta "sta"
-fi
-
-
-## print json output
-if [ $bJsonOutput == 1 ]; then
-	local bPrintJson=0
-	json_init
-
-	# add the wwan check result
-	if 	[ $bCheckWwan == 1 ];
-	then
-		json_add_string "wwan" "$retChkWwan"
-		bPrintJson=1
-	fi
-
-	# add the connection check result
-	if 	[ $bCheckConnection == 1 ];
-	then
-		json_add_string "connection" "$retChkConnect"
-		bPrintJson=1
-	fi
-
-	# add the disable AP result
-	if [ $bKillAp == 1 ]; then
-		json_add_string "disable_ap" "$retDeleteIface"
-		bPrintJson=1
-	fi
-
-	# add the disable AP result
-	if [ $bKillSta == 1 ]; then
-		json_add_string "disable_sta" "$retDeleteIface"
-		bPrintJson=1
-	fi
-
-	# print the json
-	if [ $bPrintJson == 1 ]; then
-		json_dump
-	fi
-fi
-
-
-## done
-if [ $bJsonOutput == 0 ]; then
-	echo "> Done!"
-fi
-
-
+fi 	# no-op check
 
 
