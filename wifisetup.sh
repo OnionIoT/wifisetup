@@ -154,19 +154,27 @@ ReadNetworkAuthJson () {
 		# select the encryption object
 		json_select encryption
 
-		# read the authentication type
-		json_select authentication
-		json_get_keys auth_arr
-		
-		json_get_values auth_type 
-		json_select ..
-
-		# read psk specifics
-		if [ "$auth_type" == "psk" ]
+		# read the authentication object type
+		json_get_type type authentication
+		if [ "$type" != "" ]
 		then
-			ReadNetworkAuthJsonPsk
+			# read the authentication type
+			json_select authentication
+			json_get_keys auth_arr
+			
+			json_get_values auth_type 
+			json_select ..
+
+			# read psk specifics
+			if [ "$auth_type" == "psk" ]
+			then
+				ReadNetworkAuthJsonPsk
+			else
+				auth=$auth_type
+			fi
 		else
-			auth=$auth_type
+			# no encryption, open network
+			auth="none"
 		fi
 	else
 		# no encryption, open network
@@ -407,8 +415,12 @@ UciSetupWifi () {
 			uci set wireless.@wifi-iface[$intfId].key1="$password"
 	    ;;
 	    none)
-			# set no keys for open networks
-			uci set wireless.@wifi-iface[$intfId].key=""
+			# set no keys for open networks, delete any existing ones
+			local key=$(uci -q get wireless.\@wifi-iface[$intfId].key)
+
+			if [ "$key" != "" ]; then
+				uci delete wireless.@wifi-iface[$intfId].key
+			fi
 	    ;;
 	    *)
 			# invalid authorization
