@@ -21,6 +21,8 @@ ssid=""
 password=""
 auth=""
 
+apIpAddr=""
+
 authDefault="psk2"
 authDefaultAp="none"
 networkType=""
@@ -51,6 +53,8 @@ Usage () {
 	echo "$0"
 	echo "	Accepts user input"
 	echo ""
+	echo ""
+	echo "Setting up a connection to a Wifi Network:"
 	echo "$0 -ssid <ssid> -password <password>"
 	echo "	Specify ssid and password, default auth is wpa2"
 	echo "$0 -ssid <ssid> -password <password> -auth <authentication type>"
@@ -61,10 +65,19 @@ Usage () {
 	echo "		wep"
 	echo "		none	(note: password argument will be discarded)"
 	echo ""
-	echo "Options for two above use cases:"
+	echo "Option for two above use cases:"
 	echo " -disablewwancheck 	do not check if wwan device is up after wifi setup"
+	echo ""
+	echo ""
+	echo "To setup an Access Point on the Omega:"
+	echo "  add the following flag to the above commands"
 	echo " -accesspoint		create access-point instead of connect to network"
 	echo ""
+	echo "Option for AP setup:"
+	echo " -ip <ip address>	Sets the Omega AP's IP address and the network subnet"
+	echo ""
+	echo ""
+	echo "Other operations"
 	echo "$0 -killap"
 	echo "	Disables any existing AP networks"
 	echo ""
@@ -378,9 +391,7 @@ UciSetupWifi () {
 	local intfId=$1
 	local networkType=$2
 
-	if [ $bJsonOutput == 0 ]; then
-		echo "> Connecting to $ssid network using intf $intfId..."
-	fi
+	
 
 	# setup new intf if required
 	local iface=$(uci -q get wireless.\@wifi-iface[$intfId])
@@ -392,13 +403,26 @@ UciSetupWifi () {
 
 	# perform the type specific setup
 	if [ "$networkType" = "sta" ]; then
+		if [ $bJsonOutput == 0 ]; then
+			echo "> Connecting to $ssid network using intf $intfId..."
+		fi
+
 		# use UCI to set the network to client mode and wwan
 		uci set wireless.@wifi-iface[$intfId].mode="sta"
 		uci set wireless.@wifi-iface[$intfId].network="wwan"
 	elif [ "$networkType" = "ap" ]; then
+		if [ $bJsonOutput == 0 ]; then
+			echo "> Setting up $ssid Access Point using intf $intfId..."
+		fi
+
 		# use UCI to set the network to access-point mode and wlan
 		uci set wireless.@wifi-iface[$intfId].mode="ap"
 		uci set wireless.@wifi-iface[$intfId].network="wlan"
+
+		# use UCI to set the default IP address 
+		if [ "$apIpAddr" != "" ]; then
+			uci set network.wlan.ipaddr="$apIpAddr"
+		fi
 	fi 
 
 	# use UCI to set the ssid and encryption
@@ -431,6 +455,12 @@ UciSetupWifi () {
 	# commit the changes
 	if [ $commit == 1 ]; then
 		uci commit wireless
+		
+		# check if network has to be committed (for AP addr change)
+		if 	[ "$networkType" = "ap" ] &&
+			[ "$apIpAddr" != "" ]; then
+			uci commit network
+		fi
 
 		# reset the wifi adapter
 		wifi
@@ -667,6 +697,11 @@ else
 		    -password)
 				shift
 				password="$1"
+				shift
+			;;
+			-ip)
+				shift
+				apIpAddr="$1"
 				shift
 			;;
 		    -auth)
